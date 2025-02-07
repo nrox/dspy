@@ -4,7 +4,6 @@
 /logs/
 /mlruns/
 /profiler/
-/logs/
 /docs/downloads/
 /docs/experiments/
 
@@ -64,3 +63,5 @@ docs/docs/**/*.json*
 *.pkl
 *.tar.gz
 /playground/out/
+/out/*
+!.gitkeep
