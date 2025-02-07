@@ -4,17 +4,52 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from blib2to3.pgen2.driver import contextmanager
 
 import dspy
+from dspy.datasets import HotPotQA
 
 trace = []
+
+MODEL = [
+    "ollama/deepseek-r1:8b-llama-distill-q8_0",
+    'ollama/llama3.1:8b-instruct-q8_0'
+][1]
+
+
+@contextmanager
+def conf_dspy(
+        model: str = MODEL,
+        api_key: str = "PROVIDER_API_KEY",
+        api_base: str = 'http://localhost:11434'):
+    print("configure llm ", model)
+    lm = dspy.LM(
+        model=model,
+        api_key=api_key,
+        api_base=api_base,
+    )
+    trace.clear()
+    dspy.configure(lm=lm, trace=trace)
+    yield
+    print()
+    try:
+        trace[0][0].save(path=str(Path(__file__).parents[1] / 'out' / f'log_{datetime.now().timestamp()}.json'))
+    except Exception as ex:
+        print(ex)
+
+    for i in trace:
+        for j in i:
+            print(j)
+
+    print(json.dumps(lm.history, indent=2, default=str))
 
 
 @pytest.fixture(scope='function', autouse=True)
 def configure_dspy(
-        model: str = 'ollama/llama3.1:8b-instruct-q8_0',
+        model: str = MODEL,
         api_key: str = "PROVIDER_API_KEY",
         api_base: str = 'http://localhost:11434'):
+    print("configure llm ", model)
     lm = dspy.LM(
         model=model,
         api_key=api_key,
@@ -131,3 +166,21 @@ def test_multistage_pipeline():
     draft_article = DraftArticle()
     article = draft_article(topic="World Cup 2022")
     print(article)
+
+
+def test_optimize_react():
+    def search_wikipedia(query: str) -> list[str]:
+        results = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')(query, k=3)
+        return [x['text'] for x in results]
+
+    trainset = [x.with_inputs('question') for x in HotPotQA(train_seed=2024, train_size=500).train]
+    react = dspy.ReAct("question -> answer", tools=[search_wikipedia])
+
+    tp = dspy.MIPROv2(metric=dspy.evaluate.answer_exact_match, auto="light", num_threads=24)
+    optimized_react = tp.compile(react, trainset=trainset)
+
+
+if __name__ == "__main__":
+    print("started")
+    with conf_dspy():
+        test_optimize_react()
