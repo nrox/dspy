@@ -1,10 +1,13 @@
 import json
+import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 import pytest
 from blib2to3.pgen2.driver import contextmanager
+from pydantic import BaseModel
 
 import dspy
 from dspy.datasets import HotPotQA
@@ -12,63 +15,56 @@ from dspy.datasets import HotPotQA
 trace = []
 
 MODEL = [
-    "ollama/deepseek-r1:8b-llama-distill-q8_0",
-    'ollama/llama3.1:8b-instruct-q8_0'
+    "ollama_chat/deepseek-r1:8b-llama-distill-q8_0",
+    'ollama_chat/llama3.1:8b-instruct-q8_0'
 ][1]
 
 
-@contextmanager
-def conf_dspy(
+def get_lm(
         model: str = MODEL,
         api_key: str = "PROVIDER_API_KEY",
         api_base: str = 'http://localhost:11434'):
-    print("configure llm ", model)
     lm = dspy.LM(
         model=model,
         api_key=api_key,
         api_base=api_base,
+        max_tokens=8 * 1024,
+        num_ctx=8 * 1024,
     )
+    print("configure llm ", model)
+    return lm
+
+
+@contextmanager
+def conf_dspy():
+    start = re.sub(r'\W+', '_', datetime.now().isoformat())
+    folder = Path(__file__).parents[1] / 'out' / start
+    os.makedirs(folder, exist_ok=True)
+    lm = get_lm()
     trace.clear()
     dspy.configure(lm=lm, trace=trace)
     yield
     print()
     try:
-        trace[0][0].save(path=str(Path(__file__).parents[1] / 'out' / f'log_{datetime.now().timestamp()}.json'))
+        trace[0][0].save(path=str(folder / 'save.json'))
     except Exception as ex:
         print(ex)
 
-    for i in trace:
-        for j in i:
-            print(j)
+    with open(folder / 'traces.txt', 'w', encoding='utf8') as fp:
+        for i in trace:
+            for j in i:
+                fp.write(j.model_dump_json(indent=2) if isinstance(j, BaseModel) else str(j))
+                fp.write("\n")
+            fp.write("\n")
 
-    print(json.dumps(lm.history, indent=2, default=str))
+    with open(folder / 'history.json', 'w', encoding='utf8') as fp:
+        json.dump(lm.history, fp, indent=2, default=lambda v: v.model_dump() if isinstance(v, BaseModel) else str(v))
 
 
 @pytest.fixture(scope='function', autouse=True)
-def configure_dspy(
-        model: str = MODEL,
-        api_key: str = "PROVIDER_API_KEY",
-        api_base: str = 'http://localhost:11434'):
-    print("configure llm ", model)
-    lm = dspy.LM(
-        model=model,
-        api_key=api_key,
-        api_base=api_base,
-    )
-    trace.clear()
-    dspy.configure(lm=lm, trace=trace)
-    yield
-    print()
-    try:
-        trace[0][0].save(path=str(Path(__file__).parents[1] / 'out' / f'log_{datetime.now().timestamp()}.json'))
-    except Exception as ex:
-        print(ex)
-
-    for i in trace:
-        for j in i:
-            print(j)
-
-    print(json.dumps(lm.history, indent=2, default=str))
+def configure_dspy():
+    with conf_dspy():
+        yield
 
 
 def test_math():
@@ -96,6 +92,7 @@ def test_classification():
 
     classify = dspy.Predict(Classify)
     classify(sentence="This book was super fun to read, though not the last chapter.")
+    classify(sentence="This book was super fun to read. The best book ever.")
 
 
 def test_extraction():
