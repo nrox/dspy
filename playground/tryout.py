@@ -180,4 +180,4 @@ def test_optimize_react():
 if __name__ == "__main__":
     print("started")
     with conf_dspy():
-        test_optimize_react()
+        test_multistage_pipeline()
