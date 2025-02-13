@@ -35,7 +35,7 @@ def test_examples():
 
     random.Random(0).shuffle(data)
     scale = 10
-    trainset, devset, testset = data[:2*scale], data[2*scale:5*scale], data[500:1000]
+    trainset, devset, testset = data[:2*scale], data[2*scale:5*scale], data[5*scale:10*scale]
 
     # Instantiate the metric.
     metric = SemanticF1(decompositional=True)
@@ -62,7 +62,32 @@ def test_examples():
     # Evaluate the Chain-of-Thought program.
     evaluate(cot)
 
+
+def get_evaluator(scale = 10) -> dspy.Evaluate:
+    # Download question--answer pairs from the RAG-QA Arena "Tech" dataset.
+    download("https://huggingface.co/dspy/cache/resolve/main/ragqa_arena_tech_examples.jsonl")
+
+    with open("ragqa_arena_tech_examples.jsonl") as f:
+        data = [ujson.loads(line) for line in f]
+
+    data = [dspy.Example(**d).with_inputs("question") for d in data]
+
+
+    random.Random(0).shuffle(data)
+    
+    trainset, devset, testset = data[:2*scale], data[2*scale:5*scale], data[5*scale:10*scale]
+
+    # Instantiate the metric.
+    metric = SemanticF1(decompositional=True)
+
+    evaluate = dspy.Evaluate(devset=devset, metric=metric, num_threads=24,
+                            display_progress=True, display_table=2)
+
+    return evaluate
+
+
 def ollama_embed_fn(text: str):
+    # "nomic-embed-text:latest"
     embed_model = "nomic-embed-text:latest"
     return ollama.embed(model=embed_model, input=text).embeddings
 
@@ -84,7 +109,7 @@ def test_basic_rag():
     topk_docs_to_retrieve = 5  # number of documents to retrieve per search query
 
     with open("ragqa_arena_tech_corpus.jsonl") as f:
-        corpus = [ujson.loads(line)['text'][:max_characters] for line in f]
+        corpus = [ujson.loads(line)['text'][:max_characters] for line in f][:500]
         print(f"Loaded {len(corpus)} documents. Will encode them below.")
 
     embedder = dspy.Embedder(ollama_embed_fn, batch_size=1)
@@ -92,3 +117,5 @@ def test_basic_rag():
     rag = RAG(search=search)
     response = rag(question="what are high memory and low memory on linux?")
     print(response)
+    evaluation = get_evaluator()(RAG(search=search))
+    print(evaluation)
