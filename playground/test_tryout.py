@@ -1,3 +1,4 @@
+import inspect
 import json
 import os
 import re
@@ -16,8 +17,9 @@ trace = []
 
 MODEL = [
     "ollama_chat/deepseek-r1:8b-llama-distill-q8_0",
-    'ollama_chat/llama3.1:8b-instruct-q8_0'
-][1]
+    'ollama_chat/llama3.1:8b-instruct-q8_0',
+    'ollama_chat/deepscaler:1.5b-preview-q8_0'
+][2]
 
 
 def get_lm(
